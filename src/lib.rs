@@ -23,7 +23,7 @@ impl Buf {
         let v = chunk.to_vec();
         self.buffers = [&self.buffers[..], &v[..]].concat();
     }
-    pub fn attempt_drain(&mut self, f: &dyn Fn(&WarcResult) -> bool) {
+    pub fn attempt_drain<F>(&mut self, f: &mut F) where F: Fn(&WarcResult) + Copy {
         let buf = &self.buffers[..];
         let mut warc = WarcReader::new(buf);
         loop {
@@ -45,15 +45,16 @@ impl Buf {
     }
 }
 
-pub async fn process_warc(
+pub async fn process_warc<F>(
     url: String,
-    f: &dyn Fn(&WarcResult) -> bool,
-) -> Result<Vec<bool>, Box<dyn std::error::Error>> {
+    mut f: F,
+) -> Result<Vec<bool>, Box<dyn std::error::Error>> 
+where F: Fn(&WarcResult) + Copy {
     let mut buf = Buf::new();
     let mut res = reqwest::get(&url).await?;
     while let Some(chunk) = res.chunk().await? {
         buf.add_to_buf(&chunk[..]);
-        buf.attempt_drain(f);
+        buf.attempt_drain(&mut f);
     }
     std::result::Result::Ok([true].to_vec())
 }
