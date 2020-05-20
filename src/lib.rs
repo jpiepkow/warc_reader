@@ -1,37 +1,56 @@
 use rust_warc::{WarcError, WarcReader, WarcRecord};
-pub struct WarcResult(pub WarcRecord);
-impl WarcResult {
-    pub fn unwrap(&self) -> &WarcRecord {
-        match &self {
-            WarcResult(WarcRecord) => return WarcRecord
-        }
-    }
+pub enum Warc {
+    Wait,
+    WarcResult(WarcRecord),
 }
-#[derive(Debug, Clone)]
-pub struct Buf {
+pub struct WarcParser {
+    pub records: Vec<WarcRecord>,
+    pub response: reqwest::Response,
     pub buffers: Vec<u8>,
-    pub sum: usize,
+    pub can_poll: bool
 }
-impl Buf {
-    pub fn new() -> Buf {
-        Buf {
+
+    
+impl WarcParser {
+    pub async fn new(url: String) -> Result<WarcParser, Box<dyn std::error::Error>> {
+        Ok(WarcParser {
             buffers: [].to_vec(),
-            sum: 0,
-        }
+            records: vec![],
+            response: reqwest::get(&url).await?,
+            can_poll: true
+        })
     }
+   pub async fn next(&mut self) -> Option<Warc> {
+        if(self.can_poll) {
+            if let Some(chunk) = self.response.chunk().await.unwrap() {
+                self.add_to_buf(&chunk[..]);
+                self.attempt_drain(); 
+            } else {
+               self.can_poll = false;
+            }
+        }
+        if (self.records.len() == 0 && self.can_poll == false)  {
+            return None;
+        } else {
+            if self.records.len() == 0 {
+                return Some(Warc::Wait);
+            } else {
+                return Some(Warc::WarcResult(self.records.remove(0)));
+            }
+        }
+   }
     pub fn add_to_buf(&mut self, chunk: &[u8]) {
-        let v = chunk.to_vec();
+        let v = chunk;
         self.buffers = [&self.buffers[..], &v[..]].concat();
     }
-    pub fn attempt_drain<F>(&mut self, f: &mut F) where F: Fn(&WarcResult) + Copy {
+    pub fn attempt_drain(&mut self) {
         let buf = &self.buffers[..];
         let mut warc = WarcReader::new(buf);
         loop {
             let item: Option<Result<WarcRecord, WarcError>> = warc.next();
             match item {
                 Some(Ok(record)) => {
-                    self.sum = self.sum + 1;
-                    f(&WarcResult(record));
+                    self.records.push(record);
                 }
                 Some(Err(_e)) => {
                     self.buffers = self.buffers[warc.sum..].to_vec();
@@ -43,18 +62,4 @@ impl Buf {
             }
         }
     }
-}
-
-pub async fn process_warc<F>(
-    url: String,
-    mut f: F,
-) -> Result<Vec<bool>, Box<dyn std::error::Error>> 
-where F: Fn(&WarcResult) + Copy {
-    let mut buf = Buf::new();
-    let mut res = reqwest::get(&url).await?;
-    while let Some(chunk) = res.chunk().await? {
-        buf.add_to_buf(&chunk[..]);
-        buf.attempt_drain(&mut f);
-    }
-    std::result::Result::Ok([true].to_vec())
 }
