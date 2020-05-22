@@ -12,7 +12,6 @@ let url = "https://commoncrawl.s3.amazonaws.com/crawl-data/CC-MAIN-2020-05/segme
         match warc_parser.next().await {
             Some(Warc::Wait) => continue,
             Some(Warc::WarcResult(result)) => {
-                println!("{:?}", "dis");
                 // Do something with result
             }
             None => break,
