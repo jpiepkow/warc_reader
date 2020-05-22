@@ -5,6 +5,7 @@ pub enum Warc {
     Wait,
     WarcResult(WarcRecord),
 }
+pub type Record = WarcRecord;
 pub struct WarcParser {
     pub records: Vec<WarcRecord>,
     pub response: reqwest::Response,
